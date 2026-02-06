@@ -502,16 +502,44 @@ def edit_project(current_user, project):
 @token_required
 @project_owner_required
 def delete_project(current_user, project):
-    """Delete project - only owner can delete"""
-    project_name = project.project_name
-    
-    # Delete project (cascade will delete steps, actions, etc.)
-    db.session.delete(project)
-    db.session.commit()
-    
-    return jsonify({
-        'message': f'Project "{project_name}" deleted successfully'
-    }), 200
+    """
+    Delete project - only owner can delete.
+    Ensures physical files and all database references are wiped.
+    """
+    try:
+        project_name = project.project_name
+        project_id = project.id
+
+        # 1. Clean up physical files from the 'uploads' folder
+        assets = ProjectAsset.query.filter_by(project_id=project_id).all()
+        for asset in assets:
+            # Construct the absolute path to the file
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], asset.file_path)
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except OSError as e:
+                    # Log error but continue so DB can still be cleaned
+                    print(f"Error deleting file {file_path}: {e}")
+
+        # 2. Clean up Notifications (manually, as they might not be cascaded)
+        Notification.query.filter_by(project_id=project_id).delete()
+
+        # 3. Clean up Workflow Actions
+        WorkflowAction.query.filter_by(project_id=project_id).delete()
+
+        # 4. Delete the project 
+        # (Cascade in the model handles ProjectStep and ProjectAsset database records)
+        db.session.delete(project)
+        db.session.commit()
+
+        return jsonify({
+            'message': f'Project "{project_name}" and all associated data/files deleted successfully'
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'An error occurred during deletion: {str(e)}'}), 500
 
 
 @app.route('/api/projects/<int:project_id>/forward', methods=['POST'])
