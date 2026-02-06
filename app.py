@@ -364,7 +364,7 @@ def login():
 @token_required
 def get_users(current_user):
     """Get all active users except current user"""
-    users = User.query.filter(User.is_active == True, User.id != current_user.id).all()
+    users = User.query.filter(User.is_active == True).all()
     return jsonify([user.to_dict() for user in users]), 200
 
 
@@ -1399,4 +1399,5 @@ def init_db():
 
 if __name__ == '__main__':
     init_db()
+
     app.run(debug=True, host='0.0.0.0', port=5000)
